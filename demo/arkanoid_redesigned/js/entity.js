@@ -13,8 +13,14 @@ define("ocb/entity",['pwge/spriteManager','pwge/boardManager','pwge/input','pwge
     var score = 0;
     var initial_speed = -3;
     var speed = initial_speed;
+    var stage_init_speed = speed;
     var itemProperty = 0.1; // item gen prop
     var maxBall = 5;
+    var speed_timer = 0;
+    var speedup_rate = 1.2;
+    var max_velocity = 200;
+
+    var immortal_mode = false;
 
     /**
      * Ball Object
@@ -63,7 +69,7 @@ define("ocb/entity",['pwge/spriteManager','pwge/boardManager','pwge/input','pwge
     };
 
     Ball.prototype.step = function( dt ) { // dt = ms
-        var i;
+        var i, block;
         if (this.prev_dt) {
             var ddt = dt - this.prev_dt;
             this.entity.x += this.vx*ddt/10;
@@ -87,7 +93,7 @@ define("ocb/entity",['pwge/spriteManager','pwge/boardManager','pwge/input','pwge
 
         // detecting collision to blocks
         for(i in blocks) {
-            var block = blocks[i];
+            block = blocks[i];
             switch(inCollisionRect(this, block)){
                 case 1:
                 case 2:
@@ -104,19 +110,23 @@ define("ocb/entity",['pwge/spriteManager','pwge/boardManager','pwge/input','pwge
 
         // detecting dying conditions
         if (this.entity.y > this.maxY+this.r) {
-            // remove from queue
-            for(i in balls) {
-                if (balls[i]===this) {
-                    balls.splice(i,1);
-                    break;
+            if (immortal_mode) {
+                this.vy = Math.abs(this.vy)*(-1);
+            } else {
+                // remove from queue
+                for(i in balls) {
+                    if (balls[i]===this) {
+                        balls.splice(i,1);
+                        break;
+                    }
                 }
-            }
-            this.entity.destroy();
+                this.entity.destroy();
 
-            if (balls.length<=0) {
-                this.game.trigger("end");
-                clearBallsItems();
-                showGameover(this.game, this.board);
+                if (balls.length<=0) {
+                    this.game.trigger("end");
+                    clearBallsItems();
+                    showGameover(this.game, this.board);
+                }
             }
         }
 
@@ -183,6 +193,44 @@ define("ocb/entity",['pwge/spriteManager','pwge/boardManager','pwge/input','pwge
             bBottom = ball.entity.y-ball.r <= obj.entity.y+obj.height/2;
 
         if (bTop && bBottom && bLeft && bRight){
+
+            /*
+            var Ay1 = (ball.vy/ball.vx)*(obj.entity.x-obj.width/2-ball.entity.x)+ball.entity.y,
+                Ay2 = (ball.vy/ball.vx)*(obj.entity.x+obj.width/2-ball.entity.x)+ball.entity.y;
+
+            if (ball.vx>0 && ball.vy<0) {
+                if (Ay1 <= obj.entity.y+obj.height/2) {
+                    return 3; //left
+                } else {
+                    return 2; //bottom
+                }
+            }
+
+            if (ball.vx<0 && ball.vy<0) {
+                if (Ay2 <= obj.entity.y+obj.height/2) {
+                    return 4; //right
+                } else {
+                    return 2; //bottom
+                }
+            }
+
+            if (ball.vx>0 && ball.vy>0) {
+                if (Ay1 < obj.entity.y-obj.height/2) {
+                    return 1; //top
+                } else {
+                    return 3; //left
+                }
+            }
+
+            if (ball.vx<0 && ball.vy>0) {
+                if (Ay2 < obj.entity.y-obj.height/2) {
+                    return 1; //top
+                } else {
+                    return 4; //right
+                }
+            }
+*/
+            // old collision logic.
             var dRight = (obj.entity.x+obj.width/2) - (ball.entity.x-ball.r),
                 dTop = (ball.entity.y+ball.r) - (obj.entity.y-obj.height/2),
                 dLeft = (ball.entity.x+ball.r) - (obj.entity.x-obj.width/2),
@@ -204,6 +252,7 @@ define("ocb/entity",['pwge/spriteManager','pwge/boardManager','pwge/input','pwge
             if (ball.vx>0 && dLeft<dTop && dLeft<dBottom) {
                 return 3;
             }
+
         }
         return 0;
     }
@@ -423,7 +472,12 @@ define("ocb/entity",['pwge/spriteManager','pwge/boardManager','pwge/input','pwge
         clearBallsItems();
 
         // increase ball speed
-        speed *= 1.3;
+        //stage_init_speed *= speedup_rate;
+        var v={};
+        v.vx=stage_init_speed, v.vy=stage_init_speed;
+        stage_init_speed = speedUp(v);
+
+        speed = stage_init_speed;
 
         // create blocks
         if (!createBlocks( self.game, self.playBoard, level )) {
@@ -472,6 +526,25 @@ define("ocb/entity",['pwge/spriteManager','pwge/boardManager','pwge/input','pwge
                 items[j].step(dt);
             }
         }
+
+        // speed up
+        if (dt-speed_timer>1000*30) {
+            //speed *= speedup_rate; // for new balls
+            speed_timer=dt;
+
+            var v={};
+            v.vx=speed, v.vy=speed;
+            speed = speedUp(v);
+
+            // speed up all balls
+            for(i in balls) {
+                if (balls[i]) {
+                    speedUp(balls[i]);
+                    //balls[i].vx *= speedup_rate;
+                    //balls[i].vy *= speedup_rate;
+                }
+            }
+        }
     };
 
     Entities.prototype.getScore = function() {
@@ -496,7 +569,7 @@ define("ocb/entity",['pwge/spriteManager','pwge/boardManager','pwge/input','pwge
     Block.prototype.init = function( game, board, x, y, hp ){
         this.game = game;
         this.board = board;
-        this.score = hp*100; // this score will be added to total score when deleting.
+        this.score = hp*10; // this score will be added to total score when deleting.
         this.hp = hp;
 
         // applying ball sprite
@@ -515,6 +588,19 @@ define("ocb/entity",['pwge/spriteManager','pwge/boardManager','pwge/input','pwge
         this.entity.destroy();
     };
 
+    var speedUp = function(v) {
+        var ox = v.vx, oy = v.vy, absV;
+        v.vx *= speedup_rate;
+        v.vy *= speedup_rate;
+        absV = v.vx*v.vx + v.vy*v.vy;
+        console.log(absV);
+        if (absV > max_velocity) {
+            //roll back
+            v.vx = ox;
+            v.vy = oy;
+        }
+        return v.vx;
+    };
 
     // the number means the HP of blocks
     var b = 1; // blue
@@ -599,6 +685,62 @@ define("ocb/entity",['pwge/spriteManager','pwge/boardManager','pwge/input','pwge
             [r,r,r,g,g,o,g,o],
             [g,z,z,z,z,z,z,g] ],
 
+        // lv 5
+        [   [5,1,1,1,1,1,1,5],
+            [5,3,3,1,1,3,3,5],
+            [5,3,3,3,3,3,3,5],
+            [5,3,3,3,3,3,3,5],
+            [5,3,3,3,3,3,3,5],
+            [5,3,3,3,3,3,3,5],
+            [5,3,3,3,3,3,3,5],
+            [5,1,3,3,3,3,1,5],
+            [5,1,3,3,3,3,1,5],
+            [5,1,1,3,3,1,1,5],
+            [5,5,5,5,5,5,5,5],
+            [X,X,X,X,X,X,X,X] ],
+
+        // lv 6
+        [   [5,2,5,X,5,4,5,X],
+            [5,2,5,X,5,4,5,X],
+            [5,2,5,X,5,4,5,X],
+            [5,5,5,X,5,5,5,X],
+            [X,X,X,X,X,X,X,X],
+            [X,X,3,3,3,3,X,X],
+            [X,X,5,3,3,5,X,X],
+            [X,X,5,5,5,5,X,X],
+            [X,X,X,X,X,X,X,X],
+            [5,1,5,X,5,2,2,5],
+            [5,1,5,X,5,2,2,5],
+            [5,5,5,X,5,5,5,5] ],
+/*
+        // lv 7
+        [   [X,X,X,X,X,X,X,X],
+            [X,X,X,X,X,X,X,X],
+            [X,X,X,X,X,X,X,X],
+            [X,X,X,X,X,X,X,X],
+            [X,X,X,X,X,X,X,X],
+            [X,X,X,X,X,X,X,X],
+            [X,X,X,X,X,X,X,X],
+            [X,X,X,X,X,X,X,X],
+            [X,X,X,X,X,X,X,X],
+            [X,X,X,X,X,X,X,X],
+            [X,X,X,X,X,X,X,X],
+            [X,X,X,X,X,X,X,X] ],
+
+        // lv 8
+        [   [X,X,X,X,X,X,X,X],
+            [X,X,X,X,X,X,X,X],
+            [X,X,X,X,X,X,X,X],
+            [X,X,X,X,X,X,X,X],
+            [X,X,X,X,X,X,X,X],
+            [X,X,X,X,X,X,X,X],
+            [X,X,X,X,X,X,X,X],
+            [X,X,X,X,X,X,X,X],
+            [X,X,X,X,X,X,X,X],
+            [X,X,X,X,X,X,X,X],
+            [X,X,X,X,X,X,X,X],
+            [X,X,X,X,X,X,X,X] ],
+*/
     ];
 
     var createBlocks = function( game, board, level ){
